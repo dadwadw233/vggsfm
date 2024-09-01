@@ -261,8 +261,21 @@ class CO3DProcessor(Processor):
             T = np.array(meta['viewpoint']['T'])
             # return 4x4 homogeneous transformation matrix
             pose = np.eye(4)
-            pose[:3, :3] = R
-            pose[:3, 3] = T
+            
+            # convert to pytorch3d camera
+            import torch
+            R = torch.tensor(R).unsqueeze(0)
+            T = torch.tensor(T).unsqueeze(0)
+            
+            T[:, :2] *= -1
+            R[:, :, :2] *= -1
+            R = R.permute(0, 2, 1)
+            
+            # assugn to pose
+            pose[:3, :3] = R.numpy()
+            pose[:3, 3] = T.numpy()
+                     
+            
             return pose
         
         return [read_pose(f) for f in self.metadata]
@@ -309,29 +322,121 @@ class LINEMODProcessor(Processor):
         self.length = length
         self.stride = stride
         
-        self.data_path = os.path.join(data_path, str(catogoery))
-        # custom attributes
-        self.rgb_path = os.path.join(data_path, 'rgb')
-        self.mask_path = os.path.join(data_path, 'mask')
-        self.pose_path = None
         
         self.catogoery_to_id = {
-            "ape": 1,
-            "benchvise": 2,
-            "bowl": 3,
-            "camera": 4,
-            "can": 5,
-            "cat": 6,
-            "cup": 7,
-            "driller": 8,
-            "duck": 9,
-            "eggbox": 10,
-            "glue": 11,
-            "holepuncher": 12,
-            "iron": 13,
-            "lamp": 14,
-            "phone": 15
+            "ape": "000001", # usage: %06d string format
+            "benchvise": "000002",
+            "bowl": "000003",
+            "camera": "000004",
+            "can": "000005",
+            "cat": "000006",
+            "cup": "000007",
+            "driller": "000008",
+            "duck": "000009",
+            "eggbox": "000010",
+            "glue": "000011",
+            "holepuncher": "000012",
+            "iron": "000013",
+            "lamp": "000014",
+            "phone": "000015"
         }
+        self.data_path = os.path.join(data_path, self.catogoery_to_id[catogoery])
+        
+        # custom attributes
+        self.rgb_path = os.path.join(self.data_path, 'rgb')
+        self.mask_path = os.path.join(self.data_path, 'mask')
+        self.pose_path = None
+        
+        self.anno_camera = os.path.join(self.data_path, 'scene_camera.json')
+        self.anno_pose = os.path.join(self.data_path, 'scene_gt.json')
+        
+        self._parse_annotations()
+    
+    def _parse_annotations(self):    
+        '''
+            Parse the LINEMOD annotations
+        '''
+        import json
+        
+        with open(self.anno_camera, 'r') as f:
+            data = json.load(f)
+            # convert dict to list
+            self.camera_anno = []
+            for k, v in data.items():
+                self.camera_anno.append(v)
+                
+        
+        with open(self.anno_pose, 'r') as f:
+            data = json.load(f)
+            # convert dict to list
+            self.pose_anno = []
+            for k, v in data.items():
+                self.pose_anno.append(v)
+            
+            
+    def _load_rgb_files(self):
+        '''
+            Load the RGB files (path)
+        '''   
+        return [os.path.join(self.rgb_path, name) for name in sorted(os.listdir(self.rgb_path))]
+    
+    def _load_mask_files(self):
+        '''
+            Load the mask files (path)
+        '''
+        return [os.path.join(self.mask_path, name.split(".")[0]+'_000000.png') for name in sorted(os.listdir(self.rgb_path))]
+    
+    
+    def _load_poses(self):
+        '''
+            Load the poses (R, T) 
+        '''
+        import numpy as np
+        
+        def read_pose(anno):
+            
+            R = np.array(anno['cam_R_m2c']).reshape(3, 3)
+            T = np.array(anno['cam_t_m2c'])
+            
+            # return 4x4 homogeneous transformation matrix
+            pose = np.eye(4)
+            pose[:3, :3] = R
+            pose[:3, 3] = T
+            return pose
+        
+        return [read_pose(f[0]) for f in self.pose_anno]
+    
+    def _load_intrinsics(self):
+        """
+        Load the intrinsics.
+        """
+        import numpy as np
+        
+        def read_intrinsics(anno):
+            fx = anno['cam_K'][0]
+            fy = anno['cam_K'][4]
+            cx = anno['cam_K'][2]
+            cy = anno['cam_K'][5]
+            
+            return np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
+        
+        return [read_intrinsics(f) for f in self.camera_anno]
+    
+    
+    
+    def _process_and_save_mask(self,mask_file, output_path):
+        mask_file_name = os.path.basename(mask_file).split('_')[0] + '.png'
+        mask_output_path = os.path.join(output_path, 'masks', mask_file_name)
+        self._ensure_directory_exists(os.path.dirname(mask_output_path))
+        
+        mask = cv2.imread(mask_file, cv2.IMREAD_GRAYSCALE)
+        mask[mask > 0] = 255
+        mask = cv2.bitwise_not(mask)
+        cv2.imwrite(mask_output_path, mask)
+        
+    
+        
+        
 
 
 def main():

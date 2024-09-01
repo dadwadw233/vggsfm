@@ -65,8 +65,9 @@ try:
     from pytorch3d.renderer.cameras import (
         PerspectiveCameras as PerspectiveCamerasVisual,
     )
-except:
-    print("PyTorch3d is not available. Please disable visdom.")
+except Exception as e:
+    print("PyTorch3d is not available. Please disable visdom.") 
+    raise e
 
 class RelocalizationRunner(VGGSfMRunner):
     def __init__(self, cfg):
@@ -139,9 +140,6 @@ class RelocalizationRunner(VGGSfMRunner):
                 seq_name=seq_name,
                 output_dir=output_dir,
             )
-            
-            if self.relocalization_method == "align_gt":
-                predictions = self.align_gt(predictions)
 
             # Save the sparse reconstruction results
             if self.cfg.save_to_disk:
@@ -168,6 +166,9 @@ class RelocalizationRunner(VGGSfMRunner):
                     self.save_dense_depth_maps(
                         predictions["depth_dict"], output_dir
                     )
+            
+            if self.relocalization_method == "align_gt":
+                predictions = self.align_gt(predictions)
 
             # Create reprojection video if enabled
             if self.cfg.make_reproj_video:
@@ -232,10 +233,6 @@ class RelocalizationRunner(VGGSfMRunner):
             logger.info(f"query frame rotation error: {err_R}")
             logger.info(f"query frame translation error: {err_t}")
             
-            # transform the point cloud
-            # log shape
-            logger.debug(f"points3D shape: {predictions['points3D'].shape}")
-            logger.debug(f"points3D_rgb shape: {predictions['points3D_rgb'].shape}")
             predictions["points3D"] = self.transform_points(
                 predictions["points3D"],
                 align_t_R,
@@ -259,3 +256,71 @@ class RelocalizationRunner(VGGSfMRunner):
         points = torch.matmul(points, R) + T
 
         return points.squeeze(0)
+    
+    
+    def visualize_3D_in_visdom(
+        self, predictions, seq_name=None, output_dir=None
+    ):
+        """
+        This function takes the predictions from the reconstruction process and visualizes
+        the 3D point cloud and camera positions in Visdom. It handles both sparse and dense
+        reconstructions if available. Requires a running Visdom server and PyTorch3D library.
+
+        Args:
+            predictions (dict): Reconstruction results including 3D points and camera parameters.
+            seq_name (str, optional): Sequence name for visualization.
+            output_dir (str, optional): Directory for saving output files.
+        """
+
+        if "points3D_rgb" in predictions:
+            pcl = Pointclouds(
+                points=predictions["points3D"][None],
+                features=predictions["points3D_rgb"][None],
+            )
+        else:
+            pcl = Pointclouds(points=predictions["points3D"][None])
+
+        extrinsics_opencv = predictions["extrinsics_opencv"]
+
+        # From OpenCV/COLMAP to PyTorch3D
+        rot_PT3D = extrinsics_opencv[:, :3, :3].clone().permute(0, 2, 1)
+        trans_PT3D = extrinsics_opencv[:, :3, 3].clone()
+        trans_PT3D[:, :2] *= -1
+        rot_PT3D[:, :, :2] *= -1
+        visual_cameras = PerspectiveCamerasVisual(
+            R=rot_PT3D, T=trans_PT3D, device=trans_PT3D.device
+        )
+
+        visual_dict = {"scenes": {"points": pcl, "cameras": visual_cameras}}
+
+        unproj_dense_points3D = predictions["unproj_dense_points3D"]
+        if unproj_dense_points3D is not None:
+            unprojected_rgb_points_list = []
+            for unproj_img_name in sorted(unproj_dense_points3D.keys()):
+                unprojected_rgb_points = torch.from_numpy(
+                    unproj_dense_points3D[unproj_img_name]
+                )
+                unprojected_rgb_points_list.append(unprojected_rgb_points)
+
+                # Separate 3D point locations and RGB colors
+                point_locations = unprojected_rgb_points[0]  # 3D point location
+                rgb_colors = unprojected_rgb_points[1]  # RGB color
+
+                # Create a mask for points within the specified range
+                valid_mask = point_locations.abs().max(-1)[0] <= 512
+
+                # Create a Pointclouds object with valid points and their RGB colors
+                point_cloud = Pointclouds(
+                    points=point_locations[valid_mask][None],
+                    features=rgb_colors[valid_mask][None],
+                )
+
+                # Add the point cloud to the visual dictionary
+                visual_dict["scenes"][f"unproj_{unproj_img_name}"] = point_cloud
+
+        fig = plot_scene(visual_dict, camera_scale=0.05)
+
+        env_name = f"demo_visual_{seq_name}"
+        print(f"Visualizing the scene by visdom at env: {env_name}")
+
+        self.viz.plotlyplot(fig, env=env_name, win="3D")

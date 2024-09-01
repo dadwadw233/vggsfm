@@ -36,6 +36,7 @@ class DemoLoader(Dataset):
         sort_by_filename: bool = True,
         prefix: str = "images",
         relocalization_method: str = "align_gt",
+        use_mask: bool = False,
     ):
         """
         Initialize the DemoLoader dataset.
@@ -60,7 +61,7 @@ class DemoLoader(Dataset):
         self.prefix = prefix
 
         bag_name = os.path.basename(os.path.normpath(SCENE_DIR))
-        self.have_mask = os.path.exists(os.path.join(SCENE_DIR, "masks"))
+        self.have_mask = os.path.exists(os.path.join(SCENE_DIR, "masks")) and use_mask
 
         img_filenames = glob.glob(os.path.join(SCENE_DIR, f"{self.prefix}/*"))
 

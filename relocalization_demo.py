@@ -35,6 +35,7 @@ def demo_fn(cfg: DictConfig):
         img_size=cfg.img_size,
         normalize_cameras=False,
         relocalization_method=cfg.relocalization_method,
+        use_mask=cfg.use_mask,
     )
 
     sequence_list = test_dataset.sequence_list
