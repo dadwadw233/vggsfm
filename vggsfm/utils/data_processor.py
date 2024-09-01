@@ -401,7 +401,7 @@ class LINEMODProcessor(Processor):
             # return 4x4 homogeneous transformation matrix
             pose = np.eye(4)
             pose[:3, :3] = R
-            pose[:3, 3] = T
+            pose[:3, 3] = T / 1000.0  # convert to meters
             return pose
         
         return [read_pose(f[0]) for f in self.pose_anno]

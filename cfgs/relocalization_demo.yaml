@@ -6,7 +6,7 @@ hydra:
 model_name: "vggsfm_v2_0_0"
 
 relocalization_method: "align_gt" # or "fix_pose_full" or "fix_pose_BA" (not supported now)
-use_mask: False
+use_mask: True
 
 seed: 0
 img_size: 1024

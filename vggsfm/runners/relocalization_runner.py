@@ -67,7 +67,7 @@ try:
     )
 except Exception as e:
     print("PyTorch3d is not available. Please disable visdom.") 
-    raise e
+    #raise e
 
 class RelocalizationRunner(VGGSfMRunner):
     def __init__(self, cfg):
@@ -168,7 +168,7 @@ class RelocalizationRunner(VGGSfMRunner):
                     )
             
             if self.relocalization_method == "align_gt":
-                predictions = self.align_gt(predictions)
+                predictions = self.align_gt(predictions, output_dir)
 
             # Create reprojection video if enabled
             if self.cfg.make_reproj_video:
@@ -192,7 +192,7 @@ class RelocalizationRunner(VGGSfMRunner):
 
             return predictions
         
-    def align_gt(self, predictions):
+    def align_gt(self, predictions, output_dir=None):
         """
         Align the predicted camera poses and depths with the ground truth.
         """
@@ -203,7 +203,10 @@ class RelocalizationRunner(VGGSfMRunner):
         if self.gt_poses is not None:
             # last image as query
             # select frame besides the last one
-            gt_pose = self.gt_poses[:-1]
+            if predictions["extrinsics_opencv"].shape[0] == self.gt_poses.shape[0]:
+                gt_pose = self.gt_poses[:-1]
+            else:
+                gt_pose = self.gt_poses
             
             align_t_R, align_t_T, align_t_s = align_camera_extrinsics(
                 predictions["extrinsics_opencv"][:-1],
@@ -220,18 +223,24 @@ class RelocalizationRunner(VGGSfMRunner):
                 align_t_T,
                 align_t_s,
             )
-            
-            err_R = rotation_angle(
-                self.gt_poses[-1][:3, :3].unsqueeze(0),
-                predictions["extrinsics_opencv"][-1][:3, :3].unsqueeze(0),
-            )
-            err_t = translation_angle(
-                self.gt_poses[-1][:3, 3].unsqueeze(0),
-                predictions["extrinsics_opencv"][-1][:3, 3].unsqueeze(0),
-            )
-            
-            logger.info(f"query frame rotation error: {err_R}")
-            logger.info(f"query frame translation error: {err_t}")
+            if predictions["extrinsics_opencv"].shape[0] == self.gt_poses.shape[0]:
+                err_R = rotation_angle(
+                    self.gt_poses[-1][:3, :3].unsqueeze(0),
+                    predictions["extrinsics_opencv"][-1][:3, :3].unsqueeze(0),
+                )
+                err_t = translation_angle(
+                    self.gt_poses[-1][:3, 3].unsqueeze(0),
+                    predictions["extrinsics_opencv"][-1][:3, 3].unsqueeze(0),
+                )
+                
+                logger.info(f"query frame rotation error: {err_R}")
+                logger.info(f"query frame translation error: {err_t}")
+                
+                # save error to output_dir if provided
+                if output_dir is not None:
+                    with open(os.path.join(output_dir, "error.txt"), "w") as f:
+                        f.write(f"query frame rotation error: {err_R}\n")
+                        f.write(f"query frame translation error: {err_t}\n")
             
             predictions["points3D"] = self.transform_points(
                 predictions["points3D"],
