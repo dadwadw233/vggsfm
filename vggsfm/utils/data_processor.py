@@ -1,6 +1,11 @@
 import os
 import loguru
 import tqdm
+import os
+import shutil
+import cv2
+import tqdm
+from loguru import logger
 
 class Processor:
     '''
@@ -28,64 +33,70 @@ class Processor:
         
         self.dataset_name = None
         
+    def _ensure_directory_exists(self,path):
+        os.makedirs(path, exist_ok=True)
+
+    def _copy_rgb_file(self,rgb_file, output_path):
+        rgb_file_name = os.path.basename(rgb_file)
+        rgb_output_path = os.path.join(output_path, 'images', rgb_file_name)
+        self._ensure_directory_exists(os.path.dirname(rgb_output_path))
+        shutil.copy(rgb_file, rgb_output_path)
+
+    def _process_and_save_mask(self,mask_file, output_path):
+        mask_file_name = os.path.basename(mask_file)
+        mask_output_path = os.path.join(output_path, 'masks', mask_file_name).replace('.png', '.jpg')
+        self._ensure_directory_exists(os.path.dirname(mask_output_path))
+        
+        mask = cv2.imread(mask_file, cv2.IMREAD_GRAYSCALE)
+        mask[mask > 0] = 255
+        mask = cv2.bitwise_not(mask)
+        cv2.imwrite(mask_output_path, mask)
+
+    def _save_pose(self,pose, file_name, output_path):
+        pose_output_path = os.path.join(output_path, 'poses', f'{file_name}.txt')
+        self._ensure_directory_exists(os.path.dirname(pose_output_path))
+        
+        with open(pose_output_path, 'w') as f:
+            f.write('\n'.join([' '.join(map(str, row)) for row in pose]))
+
+    def _save_intrinsics(self,intrinsics, file_name, output_path):
+        intrinsics_output_path = os.path.join(output_path, 'intrinsics', f'{file_name}.txt')
+        self._ensure_directory_exists(os.path.dirname(intrinsics_output_path))
+        
+        with open(intrinsics_output_path, 'w') as f:
+            f.write('\n'.join(map(str, intrinsics)))
+
     def _dump_data(self):
         '''
-            Dump the data to the output path
+        Dump the data to the output path
         '''
-        loguru.logger.info('Dumping data to output path')
-        import shutil
+        logger.info('Dumping data to output path')
+        
         if os.path.exists(self.output_path):
-            loguru.logger.info(f'Output path {self.output_path} already exists, removing it')
+            logger.info(f'Output path {self.output_path} already exists, removing it')
             shutil.rmtree(self.output_path)
         
         os.makedirs(self.output_path)
         
         for i in tqdm.tqdm(range(0, self.length, self.stride)):
             rgb_file = self.rgb_files[i]
-            # loguru.logger.info(f'RGB file: {rgb_file}')
-            rgb_file_name = os.path.basename(rgb_file)
-            rgb_output_path = os.path.join(self.output_path, 'images', rgb_file_name)
-            os.makedirs(os.path.dirname(rgb_output_path), exist_ok=True)
-            os.system(f'cp {rgb_file} {rgb_output_path}')
+            self._copy_rgb_file(rgb_file, self.output_path)
 
-            if self.mask_files is not None:
+            if self.mask_files:
                 mask_file = self.mask_files[i]
-                # loguru.logger.info(f'Mask file: {mask_file}')
-                mask_file_name = os.path.basename(mask_file)
-                mask_output_path = os.path.join(self.output_path, 'masks', mask_file_name)
-                os.makedirs(os.path.dirname(mask_output_path), exist_ok=True)
-                # attention: vggsfm accept mask with region whose value is 1 as invalid region, but CO3D dataset is opposite
-                # so we need to invert the mask
-                import cv2
-                mask = cv2.imread(mask_file, cv2.IMREAD_GRAYSCALE)
-                mask[mask>0] = 255
-                mask = cv2.bitwise_not(mask)
-                
-                mask_output_path = mask_output_path.replace('.png', '.jpg')
-                cv2.imwrite(mask_output_path, mask)
+                self._process_and_save_mask(mask_file, self.output_path)
             
-            if self.poses is not None:
+            if self.poses:
                 pose = self.poses[i]
-                # save camera parameters as txt file
-                pose_output_path = os.path.join(self.output_path, 'poses', f'{rgb_file_name.split(".")[0]}.txt')
+                file_name = os.path.basename(rgb_file).split('.')[0]
+                self._save_pose(pose, file_name, self.output_path)
             
-                os.makedirs(os.path.dirname(pose_output_path), exist_ok=True)
-                
-                with open(pose_output_path, 'w') as f:
-                    f.write('\n'.join([' '.join([str(i) for i in row]) for row in pose]))
-                    
-            if self.intrinsics is not None:
-                intrinsics_output_path = os.path.join(self.output_path, 'intrinsics', f'{rgb_file_name.split(".")[0]}.txt')
+            if self.intrinsics:
                 intrinsics = self.intrinsics[i]
-                    
-                os.makedirs(os.path.dirname(intrinsics_output_path), exist_ok=True)
-                
-                # save intrinsics
-                with open(intrinsics_output_path, 'w') as f:
-                    f.write('\n'.join([str(i) for i in intrinsics]))
+                file_name = os.path.basename(rgb_file).split('.')[0]
+                self._save_intrinsics(intrinsics, file_name, self.output_path)
             
-            
-        loguru.logger.info('Data dumped successfully')
+        logger.info('Data dumped successfully')
     
     def process(self):
         '''
@@ -280,6 +291,48 @@ class CO3DProcessor(Processor):
             return np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
         
         return [read_intrinsics(f) for f in self.metadata]
+
+class LINEMODProcessor(Processor):
+    '''
+        Process data for compatibility with the LINEMOD dataset
+    '''
+    
+    def __init__(self, data_path, output_path, length=None, stride=1, catogoery='ape'):
+        '''
+            Initialize the LINEMOD Processor
+        '''
+        
+        super().__init__(data_path, output_path)
+        
+        self.dataset_name = 'LINEMOD'
+        
+        self.length = length
+        self.stride = stride
+        
+        self.data_path = os.path.join(data_path, str(catogoery))
+        # custom attributes
+        self.rgb_path = os.path.join(data_path, 'rgb')
+        self.mask_path = os.path.join(data_path, 'mask')
+        self.pose_path = None
+        
+        self.catogoery_to_id = {
+            "ape": 1,
+            "benchvise": 2,
+            "bowl": 3,
+            "camera": 4,
+            "can": 5,
+            "cat": 6,
+            "cup": 7,
+            "driller": 8,
+            "duck": 9,
+            "eggbox": 10,
+            "glue": 11,
+            "holepuncher": 12,
+            "iron": 13,
+            "lamp": 14,
+            "phone": 15
+        }
+
 
 def main():
     data_path = '/home/SSD2T/yyh/dataset/co3d_test_raw'
