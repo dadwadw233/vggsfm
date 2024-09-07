@@ -238,9 +238,14 @@ class RelocalizationRunner(VGGSfMRunner):
                 
                 # save error to output_dir if provided
                 if output_dir is not None:
-                    with open(os.path.join(output_dir, "error.txt"), "w") as f:
-                        f.write(f"query frame rotation error: {err_R}\n")
-                        f.write(f"query frame translation error: {err_t}\n")
+                    # save metrcis as json
+                    metrics = {
+                        "rotation_error": err_R.item(),
+                        "translation_error": err_t.item(),
+                    }
+                    import json
+                    with open(os.path.join(output_dir, "metrics.json"), "w") as f:
+                        json.dump(metrics, f)
             
             predictions["points3D"] = self.transform_points(
                 predictions["points3D"],
