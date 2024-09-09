@@ -6,7 +6,7 @@ import shutil
 import cv2
 import tqdm
 from loguru import logger
-
+import numpy as np
 class Processor:
     '''
         Process data for compatibility with the VGGSFM 
@@ -59,7 +59,7 @@ class Processor:
         with open(pose_output_path, 'w') as f:
             f.write('\n'.join([' '.join(map(str, row)) for row in pose]))
 
-    def _save_intrinsics(self,intrinsics, file_name, output_path):
+    def _save_intrinsics(self, intrinsics, file_name, output_path):
         intrinsics_output_path = os.path.join(output_path, 'intrinsics', f'{file_name}.txt')
         self._ensure_directory_exists(os.path.dirname(intrinsics_output_path))
         
@@ -462,6 +462,8 @@ class LINEMOD_OneposeProcessor(Processor):
         
         self.catogoery = catogoery
         self.split = None
+        
+        self.K = np.array([[572.4114, 0, 325.2611], [0, 573.57043, 242.04899], [0, 0, 1]])
     
     def _load_rgb_files(self):
         '''
@@ -515,8 +517,8 @@ class LINEMOD_OneposeProcessor(Processor):
         return [read_pose(os.path.join(self.data_path, name)) for name in sorted(os.listdir(self.data_path)) if name.endswith('-pose.txt')]
         
     def _load_intrinsics(self):
-        self.intrinsics = None
-        return None
+        return self._load_poses()
+        
     
     def _process_and_save_mask(self, mask_file, output_path):
         # mask bbox into mask
@@ -581,7 +583,14 @@ class LINEMOD_OneposeProcessor(Processor):
     
     def _save_intrinsics(self, intrinsics, file_name, output_path):
         file_name = os.path.basename(file_name).split('-')[0]
-        return super()._save_intrinsics(intrinsics, file_name, output_path)
+        
+        intrinsics_output_path = os.path.join(output_path, 'intrinsics', f'{file_name}.txt')
+        self._ensure_directory_exists(os.path.dirname(intrinsics_output_path))
+        
+        with open(intrinsics_output_path, 'w') as f:
+            # save as 3x3 matrix
+            f.write('\n'.join([' '.join(map(str, row)) for row in self.K[:3]]))
+            
     
     def _copy_rgb_file(self, rgb_file, output_path):
         rgb_file_name = os.path.basename(rgb_file).split('-')[0] + '.png'
