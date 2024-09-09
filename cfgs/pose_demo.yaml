@@ -9,7 +9,7 @@ relocalization_method: "align_gt" # or "fix_pose_full" or "fix_pose_BA" (not sup
 use_mask: True
 recursive: True
 
-ref_num: 8
+ref_num: 16
 
 seed: 0
 img_size: 1024
@@ -34,7 +34,7 @@ camera_type: "SIMPLE_PINHOLE"   # optional: ["SIMPLE_PINHOLE", "SIMPLE_RADIAL"]
 
 load_gt: False
 viz_visualize: False
-gr_visualize: True
+gr_visualize: False
 
 fmat_thres: 4.0
 max_reproj_error: 4.0
@@ -54,13 +54,13 @@ auto_download_ckpt: True
 
 query_method: "aliked"
 
-use_poselib: True
+use_poselib: False
 
 shift_point2d_to_original_res: False
 
 make_reproj_video: False
 
-visual_tracks: True
+visual_tracks: False
 visual_query_points: False
 visual_dense_point_cloud: False
 

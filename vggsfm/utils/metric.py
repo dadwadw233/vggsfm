@@ -217,6 +217,28 @@ def calculate_auc(r_error, t_error, max_threshold=30, return_list=False):
     # Compute and return the cumulative sum of the normalized histogram
     return torch.cumsum(normalized_histogram, dim=0).mean()
 
+def calculate_auc_single_np(error, max_threshold=30):
+    """
+    Calculate the Area Under the Curve (AUC) for the given error array.
+
+    :param error: numpy array representing error values (Degree).
+    :param max_threshold: maximum threshold value for binning the histogram.
+    :return: cumulative sum of normalized histogram of error values.
+    """
+
+    # Define histogram bins
+    bins = np.arange(max_threshold + 1)
+
+    # Calculate histogram of error values
+    histogram, _ = np.histogram(error, bins=bins)
+
+    # Normalize the histogram
+    num_pairs = float(len(error))
+    normalized_histogram = histogram.astype(float) / num_pairs
+
+    # Compute and return the cumulative sum of the normalized histogram
+    return np.mean(np.cumsum(normalized_histogram)), normalized_histogram
+
 
 def batched_all_pairs(B, N):
     # B, N = se3.shape[:2]
@@ -376,7 +398,7 @@ def get_all_points_on_model(cad_model_path):
     model = np.stack([x, y, z], axis=-1)
     return model
 
-def projection_2d_error(self, data):
+def projection_2d_error(model_path,pose_preds, pose_gts,t_scale='m'):
     def project(xyz, K, RT):
         """
         NOTE: need to use original K
@@ -388,13 +410,15 @@ def projection_2d_error(self, data):
         xyz = np.dot(xyz, K.T)
         xy = xyz[:, :2] / xyz[:, 2:]
         return xy
-    for bs in range(len(data['pose_pred'])):
-        model_path = data['model_path'][bs]
+    
+    ret = []
+    
+        
+    for bs in range(len(pose_preds)):
         model_3D_pts = get_all_points_on_model(model_path)
-        diameter = data['diameter'][bs].detach().cpu().numpy()
-        pose_pred = data['pose_pred'][bs]
-        pose_targets = data['camera_pose'][bs].detach().cpu().numpy()
-        K = data['camera_intrinsics'][bs].detach().cpu().numpy()
+        pose_targets = pose_gts[bs]
+        pose_pred = pose_preds[bs]
+        K = np.array([[572.4114, 0, 325.2611], [0, 573.57043, 242.04899], [0, 0, 1]])
         
         # Dim check:
         if pose_pred.shape[0] == 4:
@@ -402,16 +426,14 @@ def projection_2d_error(self, data):
         if pose_targets.shape[0] == 4:
             pose_targets = pose_targets[:3]
 
-        if metrics_config.t_scale == 'mm':
+        if t_scale == 'mm':
             model_3D_pts /= 10
-            diameter /= 10
             pose_pred[:,3] /= 10
             pose_targets[:,3] /= 10
-        elif metrics_config.t_scale == 'cm':
+        elif t_scale == 'cm':
             pass
-        elif metrics_config.t_scale == 'm':
+        elif t_scale == 'm':
             model_3D_pts *= 100
-            diameter *= 100
             pose_pred[:,3] *= 100
             pose_targets[:,3] *= 100
             
@@ -419,27 +441,26 @@ def projection_2d_error(self, data):
         model_2d_pred = project(model_3D_pts, K, pose_pred) # pose_pred: 3*4
         model_2d_targets = project(model_3D_pts, K, pose_targets)
         proj_mean_diff = np.mean(np.linalg.norm(model_2d_pred - model_2d_targets, axis=-1))
+        ret.append(proj_mean_diff)
         
-        # INFO(f"2D projection error: {proj_mean_diff}")
+    return np.array(ret) if len(ret) > 1 else ret[0]
         
-        if f'proj2D_metric_{dataloader_id}' not in metrics_result.keys():
-            metrics_result[f"proj2D_metric_{dataloader_id}"] = []
-        metrics_result[f'proj2D_metric_{dataloader_id}'].append(proj_mean_diff)
     
-
-def add_metric(self, data):
-    percentage=0.1
+def add_metric(model_path, pose_preds, pose_gts, diameter=None, t_scale='m', percentage=0.1):
     syn=False
-    model_unit=metrics_config.t_scale
-    
-    
-    
-    for bs in range(len(data['pose_pred'])):
-        model_path = data['model_path'][bs]
+    model_unit=t_scale
+
+    ret = []
+    for bs in range(len(pose_preds)):
         model_3D_pts = get_all_points_on_model(model_path)
-        diameter = data['diameter'][bs].detach().cpu().numpy()
-        pose_pred = data['pose_pred'][bs]
-        pose_target = data['camera_pose'][bs].detach().cpu().numpy()
+        max_model_coord = np.max(model_3D_pts, axis=0)
+        min_model_coord = np.min(model_3D_pts, axis=0)
+        diameter_from_model = np.linalg.norm(max_model_coord - min_model_coord)
+        if diameter is None:
+            diameter = diameter_from_model
+            
+        pose_target = pose_gts[bs]
+        pose_pred = pose_preds[bs]
     
         # Dim check:
         if pose_pred.shape[0] == 4:
@@ -452,10 +473,10 @@ def add_metric(self, data):
             diameter /= 10
             pose_pred[:,3] /= 10
             pose_target[:,3] /= 10
-            
             max_model_coord = np.max(model_3D_pts, axis=0)
             min_model_coord = np.min(model_3D_pts, axis=0)
             diameter_from_model = np.linalg.norm(max_model_coord - min_model_coord)
+            
         elif model_unit == 'cm':
             pass
         elif model_unit == 'm':
@@ -480,10 +501,10 @@ def add_metric(self, data):
         else:
             mean_dist = np.mean(np.linalg.norm(model_pred - model_target, axis=-1))
         
-        if f'ADD_metric_{dataloader_id}' not in metrics_result.keys():
-            metrics_result[f'ADD_metric_{dataloader_id}'] = []
-        # INFO(f"ADD metric: {mean_dist}")
+
         if mean_dist < diameter_thres:
-            metrics_result[f'ADD_metric_{dataloader_id}'].append(1.0)
+            ret.append(1.0)
         else:
-            metrics_result[f'ADD_metric_{dataloader_id}'].append(0.0)
+            ret.append(0.0)
+            
+    return np.array(ret) if len(ret) > 1 else ret[0]
