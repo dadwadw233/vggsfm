@@ -46,7 +46,7 @@ from .runner import (
 
 from loguru import logger
 from vggsfm.utils.align import align_camera_extrinsics, apply_transformation
-from vggsfm.utils.metric import rotation_angle, translation_angle
+from vggsfm.utils.metric import rotation_angle, translation_angle, translation_meters
 
 # Optional imports
 try:
@@ -228,9 +228,15 @@ class RelocalizationRunner(VGGSfMRunner):
                     self.gt_poses[-1][:3, :3].unsqueeze(0),
                     predictions["extrinsics_opencv"][-1][:3, :3].unsqueeze(0),
                 )
-                err_t = translation_angle(
+                err_t_degree = translation_angle(
                     self.gt_poses[-1][:3, 3].unsqueeze(0),
                     predictions["extrinsics_opencv"][-1][:3, 3].unsqueeze(0),
+                )
+                
+                err_t = translation_meters(
+                    self.gt_poses[-1][:3, 3].unsqueeze(0),
+                    predictions["extrinsics_opencv"][-1][:3, 3].unsqueeze(0),
+                    input_unit="m",
                 )
                 
                 logger.info(f"query frame rotation error: {err_R}")
@@ -241,7 +247,8 @@ class RelocalizationRunner(VGGSfMRunner):
                     # save metrcis as json
                     metrics = {
                         "rotation_error": err_R.item(),
-                        "translation_error": err_t.item(),
+                        "translation_error_degree": err_t_degree.item(),
+                        "translation_error_meter": err_t.item(),
                     }
                     import json
                     with open(os.path.join(output_dir, "metrics.json"), "w") as f:

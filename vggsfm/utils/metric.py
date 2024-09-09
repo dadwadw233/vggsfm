@@ -331,6 +331,24 @@ def translation_angle(tvec_gt, tvec_pred, batch_size=None, ambiguity=True):
 
     return rel_tangle_deg
 
+def translation_meters(tvec_gt, tvec_pred, batch_size=None, input_unit="m"):
+    
+    tvec_diff = tvec_gt - tvec_pred
+    if input_unit == "mm":
+        tvec_diff = tvec_diff * 1e-3
+    elif input_unit == "cm":
+        tvec_diff = tvec_diff * 1e-2
+    elif input_unit == "dm":
+        tvec_diff = tvec_diff * 1e-1
+    elif input_unit == "m":
+        pass
+    else:
+        raise ValueError(f"Invalid input unit {input_unit}")
+    
+    tvec_diff_norm = torch.norm(tvec_diff, dim=1)
+    return tvec_diff_norm
+    
+
 
 def compare_translation_by_angle(t_gt, t, eps=1e-15, default_err=1e6):
     """Normalize the translation vectors and compute the angle between them."""
