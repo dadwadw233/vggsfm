@@ -363,3 +363,127 @@ def compare_translation_by_angle(t_gt, t, eps=1e-15, default_err=1e6):
 
     err_t[torch.isnan(err_t) | torch.isinf(err_t)] = default_err
     return err_t
+
+
+from plyfile import PlyData
+
+def get_all_points_on_model(cad_model_path):
+    ply = PlyData.read(cad_model_path)
+    data = ply.elements[0].data
+    x = data['x']
+    y = data['y']
+    z = data['z']
+    model = np.stack([x, y, z], axis=-1)
+    return model
+
+def projection_2d_error(self, data):
+    def project(xyz, K, RT):
+        """
+        NOTE: need to use original K
+        xyz: [N, 3]
+        K: [3, 3]
+        RT: [3, 4]
+        """
+        xyz = np.dot(xyz, RT[:, :3].T) + RT[:, 3:].T
+        xyz = np.dot(xyz, K.T)
+        xy = xyz[:, :2] / xyz[:, 2:]
+        return xy
+    for bs in range(len(data['pose_pred'])):
+        model_path = data['model_path'][bs]
+        model_3D_pts = get_all_points_on_model(model_path)
+        diameter = data['diameter'][bs].detach().cpu().numpy()
+        pose_pred = data['pose_pred'][bs]
+        pose_targets = data['camera_pose'][bs].detach().cpu().numpy()
+        K = data['camera_intrinsics'][bs].detach().cpu().numpy()
+        
+        # Dim check:
+        if pose_pred.shape[0] == 4:
+            pose_pred = pose_pred[:3]
+        if pose_targets.shape[0] == 4:
+            pose_targets = pose_targets[:3]
+
+        if metrics_config.t_scale == 'mm':
+            model_3D_pts /= 10
+            diameter /= 10
+            pose_pred[:,3] /= 10
+            pose_targets[:,3] /= 10
+        elif metrics_config.t_scale == 'cm':
+            pass
+        elif metrics_config.t_scale == 'm':
+            model_3D_pts *= 100
+            diameter *= 100
+            pose_pred[:,3] *= 100
+            pose_targets[:,3] *= 100
+            
+        
+        model_2d_pred = project(model_3D_pts, K, pose_pred) # pose_pred: 3*4
+        model_2d_targets = project(model_3D_pts, K, pose_targets)
+        proj_mean_diff = np.mean(np.linalg.norm(model_2d_pred - model_2d_targets, axis=-1))
+        
+        # INFO(f"2D projection error: {proj_mean_diff}")
+        
+        if f'proj2D_metric_{dataloader_id}' not in metrics_result.keys():
+            metrics_result[f"proj2D_metric_{dataloader_id}"] = []
+        metrics_result[f'proj2D_metric_{dataloader_id}'].append(proj_mean_diff)
+    
+
+def add_metric(self, data):
+    percentage=0.1
+    syn=False
+    model_unit=metrics_config.t_scale
+    
+    
+    
+    for bs in range(len(data['pose_pred'])):
+        model_path = data['model_path'][bs]
+        model_3D_pts = get_all_points_on_model(model_path)
+        diameter = data['diameter'][bs].detach().cpu().numpy()
+        pose_pred = data['pose_pred'][bs]
+        pose_target = data['camera_pose'][bs].detach().cpu().numpy()
+    
+        # Dim check:
+        if pose_pred.shape[0] == 4:
+            pose_pred = pose_pred[:3]
+        if pose_target.shape[0] == 4:
+            pose_target = pose_target[:3]
+        
+        if model_unit == 'mm':
+            model_3D_pts /= 10
+            diameter /= 10
+            pose_pred[:,3] /= 10
+            pose_target[:,3] /= 10
+            
+            max_model_coord = np.max(model_3D_pts, axis=0)
+            min_model_coord = np.min(model_3D_pts, axis=0)
+            diameter_from_model = np.linalg.norm(max_model_coord - min_model_coord)
+        elif model_unit == 'cm':
+            pass
+        elif model_unit == 'm':
+            model_3D_pts *= 100
+            diameter *= 100
+            pose_pred[:,3] *= 100
+            pose_target[:,3] *= 100
+            
+            max_model_coord = np.max(model_3D_pts, axis=0)
+            min_model_coord = np.min(model_3D_pts, axis=0)
+            diameter_from_model = np.linalg.norm(max_model_coord - min_model_coord)
+
+        diameter_thres = diameter * percentage
+        model_pred = np.dot(model_3D_pts, pose_pred[:, :3].T) + pose_pred[:, 3]
+        model_target = np.dot(model_3D_pts, pose_target[:, :3].T) + pose_target[:, 3]
+        
+        if syn:
+            from scipy import spatial
+            mean_dist_index = spatial.cKDTree(model_pred)
+            mean_dist, _ = mean_dist_index.query(model_target, k=1)
+            mean_dist = np.mean(mean_dist)
+        else:
+            mean_dist = np.mean(np.linalg.norm(model_pred - model_target, axis=-1))
+        
+        if f'ADD_metric_{dataloader_id}' not in metrics_result.keys():
+            metrics_result[f'ADD_metric_{dataloader_id}'] = []
+        # INFO(f"ADD metric: {mean_dist}")
+        if mean_dist < diameter_thres:
+            metrics_result[f'ADD_metric_{dataloader_id}'].append(1.0)
+        else:
+            metrics_result[f'ADD_metric_{dataloader_id}'].append(0.0)
