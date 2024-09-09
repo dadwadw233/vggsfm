@@ -508,6 +508,7 @@ class LINEMOD_OneposeProcessor(Processor):
             pose = np.eye(4)
             pose[:3, :3] = R
             pose[:3, 3] = T
+            
             return pose
         
         
@@ -525,7 +526,14 @@ class LINEMOD_OneposeProcessor(Processor):
         with open(mask_file, 'r') as f:
             lines = f.readlines()
             # data format xxxxx+02 (scientific notation)
-            x1, y1, x2, y2 = [int(float(line.strip())) for line in lines]
+            if self.split == 'train':
+                x1, y1, w, h = [int(float(line.strip())) for line in lines]
+                x2 = x1 + w
+                y2 = y1 + h
+            else:
+                x1, y1, x2, y2 = [int(float(line.strip())) for line in lines]
+            # log the bbox
+            # logger.info(f'bbox: {x1}, {y1}, {x2}, {y2}')
             
         file_prefix = os.path.basename(mask_file).split('-')[0]
         rgb_file = os.path.join(self.data_path, file_prefix + '-color.png')
@@ -567,6 +575,19 @@ class LINEMOD_OneposeProcessor(Processor):
         # recover the output path
         self.output_path = os.path.dirname(self.output_path)
         
+    def _save_pose(self, pose, file_name, output_path):
+        file_name = os.path.basename(file_name).split('-')[0]
+        return super()._save_pose(pose, file_name, output_path)
+    
+    def _save_intrinsics(self, intrinsics, file_name, output_path):
+        file_name = os.path.basename(file_name).split('-')[0]
+        return super()._save_intrinsics(intrinsics, file_name, output_path)
+    
+    def _copy_rgb_file(self, rgb_file, output_path):
+        rgb_file_name = os.path.basename(rgb_file).split('-')[0] + '.png'
+        rgb_output_path = os.path.join(output_path, 'images', rgb_file_name)
+        self._ensure_directory_exists(os.path.dirname(rgb_output_path))
+        shutil.copy(rgb_file, rgb_output_path)
     
 
 def main():
