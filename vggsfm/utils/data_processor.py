@@ -434,10 +434,140 @@ class LINEMODProcessor(Processor):
         mask = cv2.bitwise_not(mask)
         cv2.imwrite(mask_output_path, mask)
         
+ 
+class LINEMOD_OneposeProcessor(Processor):
+    '''
+        Process data for compatibility with the LINEMOD dataset
+    '''
     
+    def __init__(self, data_path, output_path, length=None, stride=1, catogoery='ape'):
+        '''
+            Initialize the LINEMOD Processor
+        '''
+        
+        super().__init__(data_path, output_path)
+        
+        self.train_data = os.path.join(data_path, 'lm_full', "real_train") # as reference images 
+        self.test_data = os.path.join(data_path, 'lm_full', "real_test") # as query images
         
         
+        self.dataset_name = 'LINEMOD_Onepose'
+        
+        self.length = length # ref length 
+        self.stride = stride # ref stride
+        
+        
+        if catogoery not in  os.listdir(self.train_data):
+            raise ValueError(f'Category {catogoery} not found in the dataset')
+        
+        self.catogoery = catogoery
+        self.split = None
+    
+    def _load_rgb_files(self):
+        '''
+            Load the RGB files (path) 
+            rgb files format: *-color.png
+        '''
+        return [os.path.join(self.data_path, name) for name in sorted(os.listdir(self.data_path)) if name.endswith('-color.png')]
+        
+    def _load_mask_files(self):
+        '''
+            Load the mask files (path)
+            mask files format: *-box.png
+        '''
+        if self.split == 'train':
+            return [os.path.join(self.data_path, name) for name in sorted(os.listdir(self.data_path)) if name.endswith('-box.txt')]
+        else:
+            return [os.path.join(self.data_path, name) for name in sorted(os.listdir(self.data_path)) if name.endswith('-box_fasterrcnn.txt')]
+        
+    def _load_poses(self):
+        '''
+            Load the poses (R, T) 
+            pose files format: *-pose.txt
+        '''
+        import numpy as np
+        
+        def read_pose(file):
+            
+            with open(file, 'r') as f:
+                lines = f.readlines()
+                
+                # Assuming each line corresponds to one row of the 3x4 matrix
+                matrix_values = [list(map(float, line.split())) for line in lines]
+                assert len(matrix_values) == 3 and all(len(row) == 4 for row in matrix_values), "File should contain a 3x4 matrix"
+                
+                # Convert to numpy array
+                matrix_3x4 = np.array(matrix_values)
 
+                # Extract R and T
+                R = matrix_3x4[:, :3]  # First 3 columns
+                T = matrix_3x4[:, 3]   # Last column
+                
+                
+            # return 4x4 homogeneous transformation matrix
+            pose = np.eye(4)
+            pose[:3, :3] = R
+            pose[:3, 3] = T
+            return pose
+        
+        
+        return [read_pose(os.path.join(self.data_path, name)) for name in sorted(os.listdir(self.data_path)) if name.endswith('-pose.txt')]
+        
+    def _load_intrinsics(self):
+        self.intrinsics = None
+        return None
+    
+    def _process_and_save_mask(self, mask_file, output_path):
+        # mask bbox into mask
+        # mask_file : bbox file under onepose data setting
+        
+        # load txt file
+        with open(mask_file, 'r') as f:
+            lines = f.readlines()
+            # data format xxxxx+02 (scientific notation)
+            x1, y1, x2, y2 = [int(float(line.strip())) for line in lines]
+            
+        file_prefix = os.path.basename(mask_file).split('-')[0]
+        rgb_file = os.path.join(self.data_path, file_prefix + '-color.png')
+        # load rgb image to get the size
+        rgb = cv2.imread(rgb_file)
+        import numpy as np
+
+        mask = np.ones(rgb.shape[:2], dtype=np.uint8) * 255
+        mask[y1:y2, x1:x2] = 0
+        
+        mask_output_path = os.path.join(output_path, 'masks', file_prefix + '.png')
+        self._ensure_directory_exists(os.path.dirname(mask_output_path))
+        # logger.info(f'Saving mask to {mask_output_path}')
+        
+        # save mask
+        cv2.imwrite(mask_output_path, mask)
+        
+    def process(self, split='train'):
+        '''
+            Process the data
+        '''
+        self.split = split
+        if split not in ['train', 'test']:
+            raise ValueError('Split should be either train or test')
+        self.output_path = os.path.join(self.output_path, f'{split}')
+        self.data_path = self.train_data if split == 'train' else self.test_data
+        self.data_path = os.path.join(self.data_path, self.catogoery)
+        
+        if self.dataset_name is None:
+            raise ValueError('The base class cannot be used directly. Please use a specific dataset processor')
+        
+        loguru.logger.info(f'Processing data for {self.dataset_name}')
+        
+        self._load_data()
+        self._dump_data()
+        
+        loguru.logger.info('Data processed successfully')
+        
+        # recover the output path
+        self.output_path = os.path.dirname(self.output_path)
+        
+    
 
 def main():
     data_path = '/home/SSD2T/yyh/dataset/co3d_test_raw'
