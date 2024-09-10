@@ -199,8 +199,15 @@ class DemoLoader(Dataset):
             if ref_size is None:
                 ids = np.arange(len(ref_metadata))
             else:
-                random_idx = np.random.choice(len(ref_metadata), ref_size, replace=False)
-                ids = np.array(random_idx)
+                # random_idx = np.random.choice(len(ref_metadata), ref_size, replace=False)
+                # use query index as reference for select neighbors' frames
+                # first, split the ref with query lenth
+                min = len(ref_metadata) // len(query_metadata) * query_index
+                # second, select the ref frames
+                ids = np.arange(min, min + ref_size)
+                # third, clip the ids to avoid out of range
+                ids = np.clip(ids, 0, len(ref_metadata) - 1)
+                
 
         ref_annos = [ref_metadata[i] for i in ids]
         query_annos = [query_metadata[query_index]]
