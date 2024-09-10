@@ -413,12 +413,13 @@ def projection_2d_error(model_path,pose_preds, pose_gts,t_scale='m'):
     
     ret = []
     
-        
+    K = np.array([[572.4114, 0, 325.2611], [0, 573.57043, 242.04899], [0, 0, 1]]) # only for linemod debug test
+    
     for bs in range(len(pose_preds)):
         model_3D_pts = get_all_points_on_model(model_path)
         pose_targets = pose_gts[bs]
         pose_pred = pose_preds[bs]
-        K = np.array([[572.4114, 0, 325.2611], [0, 573.57043, 242.04899], [0, 0, 1]])
+        
         
         # Dim check:
         if pose_pred.shape[0] == 4:

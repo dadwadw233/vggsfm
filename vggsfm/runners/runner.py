@@ -557,6 +557,7 @@ class VGGSfMRunner:
         predictions["pred_vis"] = pred_vis
         predictions["pred_score"] = pred_score
         predictions["valid_tracks"] = valid_tracks
+        predictions['valid_frame_mask'] = valid_frame_mask
         return predictions
 
     def extract_sparse_depth_and_point_from_reconstruction(self, predictions):

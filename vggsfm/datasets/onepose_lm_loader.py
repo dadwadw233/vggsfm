@@ -202,7 +202,7 @@ class DemoLoader(Dataset):
                 # random_idx = np.random.choice(len(ref_metadata), ref_size, replace=False)
                 # use query index as reference for select neighbors' frames
                 # first, split the ref with query lenth
-                min = len(ref_metadata) // len(query_metadata) * query_index
+                min = (len(ref_metadata) * query_index) // len(query_metadata)
                 # second, select the ref frames
                 ids = np.arange(min, min + ref_size)
                 # third, clip the ids to avoid out of range

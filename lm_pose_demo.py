@@ -87,9 +87,9 @@ def demo_fn(cfg: DictConfig):
         seq_name = sequence_list[0]
         
         cat = seq_name.split('_')[-1]
-        if cat in ['ape']:
-            loguru.logger.info(f"Skip {scene}")
-            continue
+        # if cat in ['ape']:
+        #     loguru.logger.info(f"Skip {scene}")
+        #     continue
         
         scene_metrics = {}
         

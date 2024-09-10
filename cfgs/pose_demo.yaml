@@ -24,7 +24,7 @@ extract_color: True
 filter_invalid_frame: False
 
 comple_nonvis: False
-query_frame_num: 3
+query_frame_num: 6
 robust_refine: 2
 BA_iters: 1
 
@@ -36,15 +36,15 @@ load_gt: False
 viz_visualize: False
 gr_visualize: False
 
-fmat_thres: 10.0
-max_reproj_error: 10.0
-init_max_reproj_error: 10.0
+fmat_thres: 4.0
+max_reproj_error: 4.0
+init_max_reproj_error: 4.0
 max_query_pts: 2048
 
 dense_depth: False
 
 avg_pose: True
-shared_camera: True
+shared_camera: False
 
 save_to_disk: True
 SCENE_DIR: examples/kitchen
@@ -54,13 +54,13 @@ auto_download_ckpt: True
 
 query_method: "aliked"
 
-use_poselib: False
+use_poselib: True
 
 shift_point2d_to_original_res: False
 
 make_reproj_video: False
 
-visual_tracks: True
+visual_tracks: False
 visual_query_points: False
 visual_dense_point_cloud: False
 

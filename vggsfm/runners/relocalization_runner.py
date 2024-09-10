@@ -200,6 +200,10 @@ class RelocalizationRunner(VGGSfMRunner):
         """
         # Align the camera poses
         
+        if self.cfg.filter_invalid_frame:
+            valid_frame_mask = predictions["valid_frame_mask"]
+            self.gt_poses = self.gt_poses[valid_frame_mask]
+        
         predictions["aligned_camera_poses"] = self.gt_poses
         
         if self.gt_poses is not None:
