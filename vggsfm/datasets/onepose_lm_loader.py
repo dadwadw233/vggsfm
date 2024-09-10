@@ -55,14 +55,15 @@ class DemoLoader(Dataset):
             raise ValueError("SCENE_DIR cannot be None")
 
         self.SCENE_DIR = SCENE_DIR
-        self.crop_longest = True
+        self.crop_longest = False
         self.sort_by_filename = sort_by_filename
         self.sequences = {}
         self.query_sequences = {}
         self.prefix = prefix
 
         bag_name = os.path.basename(os.path.normpath(SCENE_DIR))
-        self.have_mask = use_mask
+        self.have_mask = True
+        self.use_mask = use_mask
 
         
         # img_filenames = glob.glob(os.path.join(SCENE_DIR, f"{self.prefix}/*"))
@@ -222,7 +223,24 @@ class DemoLoader(Dataset):
             return batch, image_paths
 
         return batch
-
+    def mask_bbox(self, mask):
+        # convert pil image to numpy array
+        
+        if mask is not None:
+            if isinstance(mask, Image.Image):
+                mask = np.array(mask)
+            non_ones = mask != 255
+            rows = np.any(non_ones, axis=1)
+            cols = np.any(non_ones, axis=0)
+            
+            if np.any(rows) and np.any(cols):
+                y_min, y_max = np.where(rows)[0][[0, -1]]
+                x_min, x_max = np.where(cols)[0][[0, -1]]
+                
+                # 返回新的 bbox
+                return [x_min, y_min, x_max, y_max]
+        return None
+    
     def _load_images_and_masks(self, annos: list) -> tuple:
         """
         Load images and masks from annotations.
@@ -282,6 +300,8 @@ class DemoLoader(Dataset):
 
         for i, (anno, image) in enumerate(zip(annos, images)):
             mask = masks[i] if self.have_mask else None
+            bbox_annos = self.mask_bbox(mask)
+                
 
             # Store the original image in the dictionary with the basename of the image path as the key
             original_images[os.path.basename(image_paths[i])] = np.array(image)
@@ -290,19 +310,19 @@ class DemoLoader(Dataset):
             (image_transformed, mask_transformed, crop_paras, bbox) = (
                 pad_and_resize_image(
                     image,
-                    self.crop_longest,
+                    self.use_mask,
                     self.img_size,
                     mask=mask,
                     transform=self.transform,
+                    bbox_anno=bbox_annos if not self.use_mask else None,
                 )
             )
             images_transformed.append(image_transformed)
             if mask_transformed is not None:
                 masks_transformed.append(mask_transformed)
             crop_parameters.append(crop_paras)
-
         images = torch.stack(images_transformed)
-        masks = torch.stack(masks_transformed) if self.have_mask else None
+        masks = torch.stack(masks_transformed) if self.have_mask and masks_transformed.__len__() > 0 else None
         
         poses = None
         
@@ -324,7 +344,7 @@ class DemoLoader(Dataset):
                 "gt_poses": poses,
                 "crop_params": torch.stack(crop_parameters),
                 "scene_dir": os.path.dirname(os.path.dirname(image_paths[0])),
-                "masks": masks.clamp(0, 1) if self.have_mask else None,
+                "masks": masks.clamp(0, 1) if self.have_mask and masks is not None else None,
                 "original_images": original_images,  # A dict with the image path as the key and the original np image as the value
             }
         )
@@ -476,14 +496,43 @@ def pad_and_resize_image(
     else:
         assert bbox_anno is not None
         bbox = np.array(bbox_anno)
+        crop_dim = max(bbox[2] - bbox[0], bbox[3] - bbox[1])
+        
+        center_x = (bbox[0] + bbox[2]) / 2
+        center_y = (bbox[1] + bbox[3]) / 2
+
+        half_crop_dim = crop_dim / 2
+
+        square_bbox = np.array([
+            center_x - half_crop_dim,
+            center_y - half_crop_dim,
+            center_x + half_crop_dim,
+            center_y + half_crop_dim
+        ])
+
+        
+        bbox = square_bbox.astype(int)
+        
+        # assert bbox is square
+        assert bbox[2] - bbox[0] == bbox[3] - bbox[1]
+        
+        crop_dim = max(h, w)
+        
+        
 
     crop_paras = calculate_crop_parameters(image, bbox, crop_dim, img_size)
 
     # Crop image by bbox
     image = _crop_image(image, bbox)
     image_transformed = transform(image).clamp(0.0, 1.0)
+    
+    # vis image for debug:
+    # import matplotlib.pyplot as plt
+    # plt.imshow(image_transformed.permute(1, 2, 0))
+    # plt.show()
+    
 
-    if mask is not None:
+    if mask is not None and bbox_anno is None:
         mask = _crop_image(mask, bbox)
         mask_transformed = transform(mask).clamp(0.0, 1.0)
     else:

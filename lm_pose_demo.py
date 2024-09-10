@@ -87,6 +87,9 @@ def demo_fn(cfg: DictConfig):
         seq_name = sequence_list[0]
         
         cat = seq_name.split('_')[-1]
+        if cat in ['ape']:
+            loguru.logger.info(f"Skip {scene}")
+            continue
         
         scene_metrics = {}
         
@@ -124,19 +127,19 @@ def demo_fn(cfg: DictConfig):
                 # Both visualization and output writing are performed inside VGGSfMRunner
                 
                 # supress the output of the runner
-                with SuppressOutput():                    
-                    predictions = vggsfm_runner.run(
-                        images,
-                        masks=masks,
-                        original_images=original_images,
-                        image_paths=image_paths,
-                        crop_params=crop_params,
-                        seq_name=seq_name,
-                        output_dir=output_dir,
-                        relocalization_method=cfg.relocalization_method,
-                        gt_poses=gt_poses,
-                        model_path = os.path.join('data/linemod_onepose/lm_full/models', cat, f'{cat}.ply')
-                    )
+                # with SuppressOutput():                    
+                predictions = vggsfm_runner.run(
+                    images,
+                    masks=masks,
+                    original_images=original_images,
+                    image_paths=image_paths,
+                    crop_params=crop_params,
+                    seq_name=seq_name,
+                    output_dir=output_dir,
+                    relocalization_method=cfg.relocalization_method,
+                    gt_poses=gt_poses,
+                    model_path = os.path.join('data/linemod_onepose/lm_full/models', cat, f'{cat}.ply')
+                )
                     
                     
                 
